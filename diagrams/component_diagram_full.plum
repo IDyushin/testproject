@@ -1,0 +1,29 @@
+@startuml
+actor User
+participant Gateway
+participant "Сервис верификации" as Auth
+participant SMS
+participant Redis
+participant "Сервис регистрации" as Reg
+participant BD
+
+User -> Gateway: 1. Запрос кода
+Gateway -> Auth: 2. Передача
+Auth -> BD: 3. Проверка номера
+alt Номер новый
+  Auth -> SMS: 4. Отправка SMS
+  Auth -> Redis: 5. Сохранить код
+else Номер существует
+  Auth --> User: Данные пользователя
+end
+User -> Gateway: 6. Ввод кода
+Gateway -> Auth: 7. Проверка кода
+Auth -> Redis: 8. Получить код
+alt Код верен
+  Auth -> Reg: 9. Инициировать регистрацию
+  Reg -> BD: 10. Сохранить данные
+  Reg --> User: 11. Успех
+else Код неверен
+  Auth --> User: Ошибка
+end
+@enduml
