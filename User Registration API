@@ -1,0 +1,231 @@
+openapi: 3.0.3
+info:
+  title: User Registration API
+  version: 1.0.0
+  description: |
+    Логика работы:
+    0. Все SMS отправляются через единую точку вызова /api/send-sms.
+    1. Пользователь запрашивает код верификации через /api/request-verification-code.
+    2. Система генерирует код и сохраняет в Redis (TTL=5 минут).
+    3. SMS отправляется через /api/send-sms с обязательной подписью sign.
+    4. При успешной верификации через /api/verify-code:
+       - Если пользователь найден: возврат данных.
+       - Если пользователь не найден: регистрация через /api/register.
+
+    Требования NotiSend API:
+    - Все запросы к /api/send-sms требуют параметры project и sign.
+    - Подпись формируется как MD5(SHA1(sorted_params + ';' + api_key)).
+    - Номера в международном формате E.164 (+79123456789).
+    - Документация: https://notisend.ru/dev/sms/api/
+
+paths:
+  /api/request-verification-code:
+    post:
+      summary: Запрос кода верификации
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PhoneRequest'
+      responses:
+        '202':
+          description: Код отправлен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SmsResponse'
+          headers:
+            Retry-After:
+              description: Время до повторной отправки (сек)
+              schema: {type: integer}
+  /api/verify-code:
+    post:
+      summary: Проверка кода верификации
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerifyRequest'
+      responses:
+        '200':
+          description: Код подтвержден
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '403':
+          description: Неверный код
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/register:
+    post:
+      summary: Регистрация нового пользователя
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegistrationRequest'
+      responses:
+        '201':
+          description: Пользователь успешно зарегистрирован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+  /api/send-sms:
+    post:
+      summary: Отправка SMS через NotiSend
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/SmsRequest'
+            encoding:
+              message:
+                contentType: text/plain; charset=utf-8
+      responses:
+        '200':
+          description: Сообщение принято к отправке
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SmsResponse'
+        '403':
+          description: Неверная подпись
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+components:
+  schemas:
+    PhoneRequest:
+      type: object
+      properties:
+        phone:
+          type: string
+          pattern: '^\+7\d{10}$'
+          example: "+79123456789"
+      required:
+        - phone
+
+    VerifyRequest:
+      type: object
+      properties:
+        phone:
+          $ref: '#/components/schemas/PhoneRequest/properties/phone'
+        code:
+          type: string
+          minLength: 4
+          maxLength: 6
+          example: "123456"
+      required:
+        - phone
+        - code
+    RegistrationRequest:
+      type: object
+      properties:
+        phone:
+          $ref: '#/components/schemas/PhoneRequest/properties/phone'
+        name:
+          type: string
+          minLength: 2
+          example: "Иван Иванов"
+        email:
+          type: string
+          format: email
+          example: "ivan@example.com"
+      required:
+        - phone
+        - name
+    UserResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            type:
+              type: string
+              enum: [users]
+            id:
+              type: string
+              example: "+79123456789"
+            attributes:
+              type: object
+              properties:
+                phone:
+                  type: string
+                name:
+                  type: string
+                email:
+                  type: string
+                verified_at:
+                  type: string
+                  format: date-time
+                  example: "2025-03-06T12:00:00Z"
+    SmsRequest:
+      type: object
+      required:
+        - project
+        - sign
+        - sender
+        - message
+        - recipients
+      properties:
+        project:
+          type: string
+          example: "yushin_project"
+          description: Идентификатор проекта в NotiSend
+        recipients:
+          type: string
+          pattern: '^\+7\d{10}$'  
+          example: "+79123456789"
+        message:
+          type: string
+          example: "Ваш код: 123456"
+        sign:
+          type: string
+          example: "3eb8e51846f271ea09378b4d1a597345"
+          description: Подпись запроса
+    SmsResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: "success"
+        recipients:
+          type: array
+          items:
+            type: string
+          example: ["+79001234567"] 
+        messages_id:
+          type: array
+          items:
+            type: integer
+          example: [1567]     
+        code_id:
+          type: string
+          example: "12345abcde" 
+    ErrorResponse:
+      type: object
+      properties:
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              status: {type: string, example: "статус"}
+              error: {type: string, example: "код ошибки"}
+
+x-notisend:
+  api-key-location: "b91372c7c4324bb037cc0b9113a88cb5" 
+  rate-limits:
+    sms: "1/мин, 5/день"
+  validation-rules:
+    phone: "Международный формат E.164 (+79121234567)"
+    message: "UTF-8, максимум 800 символов"
