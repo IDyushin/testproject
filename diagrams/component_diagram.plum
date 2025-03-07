@@ -1,0 +1,13 @@
+@startuml
+component API_Gateway
+component "Сервис верификации" as Auth
+component "Сервис SMS" as SMS
+component "Сервис регистрации" as Reg
+database PostgreSQL
+database Redis
+
+API_Gateway --> Auth
+Auth --> SMS
+Auth --> Redis
+Reg --> PostgreSQL
+@enduml
