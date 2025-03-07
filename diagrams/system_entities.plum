@@ -1,0 +1,26 @@
+@startuml 
+entity Пользователь {
+  + ID: string
+  + Телефон: string
+  + Код: string
+  + Статус: string
+}
+entity SMS_Service {
+  + ID: string
+  + Сообщение: string
+  + Статус: string
+  + Время отправки: datetime
+}
+entity Регистрация {
+  + ID: string
+  + Телефон: string
+  + Имя: string
+  + Email: string
+}
+' Связи'
+Пользователь -- SMS_Service : "Запросить код верификации"
+Пользователь -- Регистрация : "Зарегистрировать пользователя"
+SMS_Service -- Пользователь : "Отправить код"
+Регистрация -- Пользователь : "Пользователь зарегистрирован"
+
+@enduml
